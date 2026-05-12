@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Portfolio Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Space+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        :root {
+            --bg:#0b0e14; --card:#151921; --border:#262d3a;
+            --accent:#38bdf8; --sp:#fbbf24; --nd:#a78bfa;
+            --text:#f8fafc; --muted:#94a3b8; --green:#10b981; --red:#ef4444;
+        }
+        *{margin:0;padding:0;box-sizing:border-box; font-family:'Inter',sans-serif;}
+        body{background:var(--bg);color:var(--text);padding:15px;}
+        .wrap{max-width:1200px;margin:0 auto;}
+        
+        /* Stats Dashboard */
+        .stats{display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:15px; margin-bottom:20px;}
+        .card{background:var(--card); border:1px solid var(--border); padding:20px; border-radius:16px;}
+        .card-h{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;}
+        .card-v{font-size:24px; font-weight:700;}
+
+        /* Chart */
+        .box{background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; margin-bottom:20px;}
+        .chart-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;}
+        .ranges button{background:transparent; border:1px solid var(--border); color:var(--muted); padding:6px 12px; border-radius:8px; cursor:pointer; margin-left:5px; font-size:12px;}
+        .ranges button.active{border-color:var(--accent); color:var(--accent);}
+        .chart-wrap{height:350px;}
+
+        /* Inventory */
+        .inputs{display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;}
+        input{background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; color:#fff; flex:1; min-width:100px;}
+        .btn-add{background:var(--accent); color:#000; border:none; padding:12px 24px; border-radius:8px; font-weight:700; cursor:pointer;}
+        
+        .table-scroll{overflow-x:auto;}
+        table{width:100%; border-collapse:collapse; min-width:700px;}
+        th{text-align:left; padding:15px; color:var(--muted); font-size:12px; border-bottom:1px solid var(--border);}
+        td{padding:15px; border-bottom:1px solid rgba(38,45,58,0.5); font-size:14px;}
+        .up{color:var(--green);} .down{color:var(--red);}
+        .del-btn{background:none; border:none; color:var(--muted); cursor:pointer; font-size:18px;}
+    </style>
+</head>
+<body>
+
+<div class="wrap">
+    <div class="stats">
+        <div class="card"><div class="card-h">Total Portfolio Value</div><div class="card-val card-v" id="stat-total">$0.00</div></div>
+        <div class="card"><div class="card-h">Unrealized P/L</div><div class="card-val card-v" id="stat-pl">0.00%</div></div>
+        <div class="card"><div class="card-h">Market Sentiment</div><div class="card-val card-v" id="stat-mood">--</div></div>
+    </div>
+
+    <div class="box">
+        <div class="chart-header">
+            <h3>Benchmark Comparison (%)</h3>
+            <div class="ranges">
+                <button onclick="changeRange(180, this)">6M</button>
+                <button class="active" onclick="changeRange(365, this)">1Y</button>
+                <button onclick="changeRange(730, this)">2Y</button>
+            </div>
+        </div>
+        <div class="chart-wrap"><canvas id="perfChart"></canvas></div>
+    </div>
+
+    <div class="box">
+        <h3 style="margin-bottom:20px">Asset Manager</h3>
+        <div class="inputs">
+            <input id="inT" placeholder="Ticker (AAPL)">
+            <input id="inS" type="number" placeholder="Shares">
+            <input id="inC" type="number" placeholder="Avg Cost">
+            <button class="btn-add" onclick="addStock()">Add Stock</button>
+        </div>
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr><th>Asset</th><th>Shares</th><th>Avg Cost</th><th>Live Price</th><th>Equity</th><th>P/L %</th><th></th></tr>
+                </thead>
+                <tbody id="stock-list"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+const API_KEY = 'd819jdhr01qler4hgci0d819jdhr01qler4hgcig';
+
+// INITIAL DATA FROM YOUR SCREENSHOTS
+const initialData = [
+    {ticker:'GOOGL', shares:1, avgCost:86.40},
+    {ticker:'NVDA', shares:0.12, avgCost:77.10},
+    {ticker:'AMZN', shares:0.55, avgCost:76.41},
+    {ticker:'ASML', shares:0.1, avgCost:60.68},
+    {ticker:'PLTR', shares:3.5, avgCost:21.03},
+    {ticker:'TSM', shares:0.3, avgCost:31.04},
+    {ticker:'MSFT', shares:0.1, avgCost:39.31},
+    {ticker:'COST', shares:0.04, avgCost:32.66},
+    {ticker:'META', shares:0.07, avgCost:32.92},
+    {ticker:'JPM', shares:0.14, avgCost:25.91},
+    {ticker:'WM', shares:0.12, avgCost:26.02},
+    {ticker:'UBER', shares:0.35, avgCost:25.06},
+    {ticker:'ABBV', shares:0.15, avgCost:22.27},
+    {ticker:'HIMS', shares:1.1, avgCost:21.68},
+    {ticker:'RBRK', shares:0.65, avgCost:23.46},
+    {ticker:'V', shares:0.09, avgCost:21.49}
+];
+
+let ptf = JSON.parse(localStorage.getItem('my_pro_port')) || initialData;
+let mainChart;
+
+async function fetchQuote(s) {
+    const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${s}&token=${API_KEY}`);
+    return await r.json();
+}
+
+async function fetchCandles(s, days) {
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - (days * 86400);
+    const r = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${s}&resolution=D&from=${start}&to=${end}&token=${API_KEY}`);
+    const d = await r.json();
+    if(d.s === "ok") {
+        const base = d.c[0];
+        return d.c.map(p => ((p - base) / base) * 100);
+    }
+    return [];
+}
+
+async function updateDashboard() {
+    const list = document.getElementById('stock-list');
+    list.innerHTML = '';
+    let totalVal = 0, totalCost = 0;
+
+    for(let s of ptf) {
+        const q = await fetchQuote(s.ticker);
+        const equity = q.c * s.shares;
+        const pl = ((q.c - s.avgCost) / s.avgCost) * 100;
+        totalVal += equity; totalCost += (s.avgCost * s.shares);
+
+        list.innerHTML += `
+            <tr>
+                <td style="font-weight:bold; color:var(--accent)">${s.ticker}</td>
+                <td>${s.shares}</td>
+                <td>$${s.avgCost.toFixed(2)}</td>
+                <td>$${q.c.toFixed(2)}</td>
+                <td>$${equity.toFixed(2)}</td>
+                <td class="${pl >= 0 ? 'up' : 'down'}">${pl.toFixed(2)}%</td>
+                <td><button class="del-btn" onclick="removeStock('${s.ticker}')">✕</button></td>
+            </tr>
+        `;
+    }
+
+    document.getElementById('stat-total').textContent = `$${totalVal.toLocaleString(undefined, {maximumFractionDigits:2})}`;
+    const totalPL = ((totalVal - totalCost) / totalCost) * 100;
+    document.getElementById('stat-pl').textContent = `${totalPL.toFixed(2)}%`;
+    document.getElementById('stat-pl').className = `card-v ${totalPL >= 0 ? 'up' : 'down'}`;
+
+    const spy = await fetchQuote('SPY');
+    document.getElementById('stat-mood').textContent = spy.dp >= 0 ? 'Bullish 🐂' : 'Bearish 🐻';
+    document.getElementById('stat-mood').style.color = spy.dp >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+async function renderChart(days = 365) {
+    const spy = await fetchCandles('SPY', days);
+    const qqq = await fetchCandles('QQQ', days);
+    // Comparison uses your top holding (GOOGL) as proxy for portfolio performance
+    const myPerf = await fetchCandles(ptf[0]?.ticker || 'SPY', days);
+
+    const ctx = document.getElementById('perfChart').getContext('2d');
+    if(mainChart) mainChart.destroy();
+    
+    mainChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: spy.map((_, i) => i),
+            datasets: [
+                { label: 'My Portfolio', data: myPerf, borderColor: '#38bdf8', borderWidth: 3, pointRadius: 0 },
+                { label: 'S&P 500', data: spy, borderColor: '#fbbf24', borderDash: [5,5], borderWidth: 1, pointRadius: 0 },
+                { label: 'Nasdaq', data: qqq, borderColor: '#a78bfa', borderDash: [5,5], borderWidth: 1, pointRadius: 0 }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { display: false }, y: { grid: { color: '#262d3a' }, ticks: { color: '#94a3b8', callback: v => v + '%' } } }
+        }
+    });
+}
+
+function changeRange(d, btn) {
+    document.querySelectorAll('.ranges button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderChart(d);
+}
+
+function addStock() {
+    const t = document.getElementById('inT').value.toUpperCase();
+    const s = parseFloat(document.getElementById('inS').value);
+    const c = parseFloat(document.getElementById('inC').value);
+    if(t && s && c) {
+        ptf.push({ticker:t, shares:s, avgCost:c});
+        localStorage.setItem('my_pro_port', JSON.stringify(ptf));
+        updateDashboard();
+    }
+}
+
+function removeStock(t) {
+    ptf = ptf.filter(x => x.ticker !== t);
+    localStorage.setItem('my_pro_port', JSON.stringify(ptf));
+    updateDashboard();
+}
+
+// Start
+updateDashboard();
+renderChart(365);
+</script>
+</body>
+</html>
